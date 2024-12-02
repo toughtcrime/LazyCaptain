@@ -1,0 +1,24 @@
+services:
+  # app:
+  #   build:
+  #     context: .
+  #   container_name: my_app
+  #   environment:
+  #     - REDIS_HOST=redis       # Redis service name from this file
+  #     - REDIS_PORT=6379
+  #     - REDIS_DB=0
+  #   volumes:
+  #     - ./app:/app             # Mount the app directory
+  #   working_dir: /app          # Set the working directory
+  #   command: python main.py    # Run your app
+  #   depends_on:
+  #     - redis
+
+  redis:
+    image: redis:7
+    container_name: redis_server
+    user: "redis"
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data     # Persist Redis data
