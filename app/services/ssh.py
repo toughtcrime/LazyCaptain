@@ -6,12 +6,15 @@ import os
 logger = logging.getLogger(__name__)
 
 class SSHManager:
+    """Class to handle SSH public key copying and key-based connections to remote servers."""
 
-    def __init__(self, username, password, server_ip):
+    def __init__(self, username, password, server_ip, private_key_path, public_key_path):
         self.username = username
         self.password = password
         self.server_ip = server_ip
         self.ssh_client = None
+        self.private_key_path = os.path.expanduser(private_key_path)
+        self.public_key_path = public_key_path
 
     def upload_public_key(self, public_key_path="~/.ssh/id_ed25519.pub"):
         """
@@ -82,3 +85,89 @@ class SSHManager:
             self.ssh_client.close()
             logger.info(f"Connection to {self.server_ip} closed.")
     
+    def connect_with_key(self):
+            """
+            Connect to a server via SSH using a private key.
+
+            Returns:
+                bool: True if the connection is successful, False otherwise.
+            """
+            # Validate the private key type
+            is_valid, key_type_or_error = self.validate_private_key()
+            if not is_valid:
+                print(f"Key validation failed: {key_type_or_error}")
+                return False
+
+            try:
+                print(f"Connecting to {self.server_ip} using {key_type_or_error} key...")
+
+                match key_type_or_error:
+                    case "RSA":
+                        key = paramiko.RSAKey.from_private_key_file(self.private_key_path)
+                    case "Ed25519":
+                        key = paramiko.Ed25519Key.from_private_key_file(self.private_key_path)
+                    case "DSA":
+                        key = paramiko.DSSKey.from_private_key_file(self.private_key_path)
+                    case "ECDSA":
+                        key = paramiko.ECDSAKey.from_private_key_file(self.private_key_path)
+                    case _:
+                        print(f"Unhandled key type '{key_type_or_error}' during connection.")
+                        return False
+
+                self.ssh_client = paramiko.SSHClient()
+                self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                self.ssh_client.connect(
+                    hostname=self.server_ip,
+                    username=self.username,
+                    pkey=key
+                )
+                print(f"Successfully connected to {self.server_ip} using the {key_type_or_error} key.")
+                return True
+            except paramiko.AuthenticationException:
+                print(f"Authentication failed when connecting to {self.server_ip}.")
+            except FileNotFoundError:
+                print(f"Private key file not found: {self.private_key_path}.")
+            except Exception as e:
+                print(f"An error occurred while connecting to {self.server_ip}: {e}")
+            return False
+
+    
+    def validate_private_key(self):
+        """
+        Validate the type of the private key file.
+
+        Returns:
+            tuple: (bool, str) where the first value indicates if the key is valid,
+                   and the second value is the key type or error message.
+        """
+        try:
+            # Try to load the key as an RSA key
+            paramiko.RSAKey.from_private_key_file(self.private_key_path)
+            return True, "RSA"
+        except paramiko.ssh_exception.PasswordRequiredException:
+            return False, "Password-protected RSA key is not supported in this script."
+        except paramiko.ssh_exception.SSHException:
+            pass  # If not RSA, continue to other key types.
+
+        try:
+            # Try to load the key as an Ed25519 key
+            paramiko.Ed25519Key.from_private_key_file(self.private_key_path)
+            return True, "Ed25519"
+        except paramiko.ssh_exception.SSHException:
+            pass  # If not Ed25519, continue to other key types.
+
+        try:
+            # Try to load the key as a DSA key
+            paramiko.DSSKey.from_private_key_file(self.private_key_path)
+            return True, "DSA"
+        except paramiko.ssh_exception.SSHException:
+            pass  # If not DSA, continue to other key types.
+
+        try:
+            # Try to load the key as an ECDSA key
+            paramiko.ECDSAKey.from_private_key_file(self.private_key_path)
+            return True, "ECDSA"
+        except paramiko.ssh_exception.SSHException:
+            pass  # If not ECDSA, no other types are supported.
+
+        return False, "Unsupported or invalid private key format."
